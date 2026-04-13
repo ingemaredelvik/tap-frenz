@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Tap Frenzy</title>
+  <style>
+    *, *::before, *::after {
+      margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+    }
+    html, body {
+      width: 100%; height: 100%;
+      background: #08080f;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+      touch-action: manipulation;
+    }
+    .screen {
+      display: none;
+      position: fixed; inset: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 28px 24px;
+      gap: 18px;
+    }
+    .screen.active { display: flex; }
+
+    /* ── Typography ─────────────────────────────────────── */
+    .logo {
+      font-size: clamp(2.4rem, 10vw, 3.5rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, #00ff88 0%, #00ccff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -1px;
+      line-height: 1;
+    }
+    .subtitle {
+      font-size: 0.95rem;
+      color: #666;
+      text-align: center;
+      line-height: 1.5;
+      max-width: 280px;
+    }
+
+    /* ── Inputs & Buttons ───────────────────────────────── */
+    input[type="text"] {
+      width: 100%; max-width: 320px;
+      padding: 16px 20px;
+      background: #131320;
+      border: 2px solid #2a2a44;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 1.15rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      text-align: center;
+      font-weight: 600;
+    }
+    input[type="text"]:focus {
+      border-color: #00ff88;
+      box-shadow: 0 0 0 3px rgba(0, 255, 136, 0.15);
+    }
+    input[type="text"]::placeholder { color: #444; font-weight: 400; }
+
+    .btn {
+      padding: 16px 32px;
+      border: none;
+      border-radius: 14px;
+      font-size: 1.1rem;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s, box-shadow 0.1s;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+    .btn:active { transform: scale(0.94); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+    .btn-primary {
+      background: linear-gradient(135deg, #00ff88, #00ccff);
+      color: #08080f;
+      width: 100%; max-width: 320px;
+      box-shadow: 0 4px 24px rgba(0, 255, 136, 0.3);
+    }
+    .btn-primary:not(:disabled):active {
+      box-shadow: 0 2px 12px rgba(0, 255, 136, 0.2);
+    }
+
+    .error-text {
+      color: #ff5566;
+      font-size: 0.88rem;
+      text-align: center;
+      min-height: 20px;
+      font-weight: 500;
+    }
+
+    /* ── Waiting screen ─────────────────────────────────── */
+    .pulse-ring {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      border: 3px solid #00ff88;
+      animation: pulseRing 1.8s ease-in-out infinite;
+      position: relative;
+    }
+    .pulse-ring::after {
+      content: '';
+      position: absolute; inset: 8px;
+      border-radius: 50%;
+      background: #00ff88;
+      animation: pulseDot 1.8s ease-in-out infinite;
+    }
+    @keyframes pulseRing {
+      0%, 100% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.15); opacity: 0.6; }
+    }
+    @keyframes pulseDot {
+      0%, 100% { transform: scale(1); opacity: 0.9; }
+      50% { transform: scale(0.8); opacity: 0.5; }
+    }
+    .waiting-text {
+      font-size: 1.3rem;
+      font-weight: 600;
+      color: #aaa;
+      text-align: center;
+    }
+    .team-badge {
+      background: #131320;
+      border: 2px solid #00ff88;
+      border-radius: 10px;
+      padding: 10px 28px;
+      font-size: 1.05rem;
+      font-weight: 700;
+      color: #00ff88;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Countdown screen ───────────────────────────────── */
+    .countdown-label {
+      font-size: 0.9rem;
+      color: #555;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
+    .countdown-number {
+      font-size: clamp(10rem, 40vw, 15rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, #00ff88, #00ccff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      animation: countPop 0.85s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    @keyframes countPop {
+      from { transform: scale(0.2); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    /* ── Game screen ────────────────────────────────────── */
+    #screen-game {
+      padding: 0;
+      justify-content: flex-start;
+      gap: 0;
+    }
+    .game-header {
+      width: 100%;
+      background: #0d0d1a;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .timer-track {
+      flex: 1;
+      height: 14px;
+      background: #1c1c30;
+      border-radius: 7px;
+      overflow: hidden;
+    }
+    #timer-bar {
+      height: 100%;
+      width: 100%;
+      background: #00ff88;
+      border-radius: 7px;
+      transition: width 0.95s linear, background 0.4s ease;
+    }
+    #time-left {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: #fff;
+      min-width: 28px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .score-wrap {
+      font-size: 1rem;
+      font-weight: 800;
+      color: #00ff88;
+      white-space: nowrap;
+      min-width: 56px;
+      text-align: right;
+    }
+    .score-wrap span { color: #fff; }
+
+    #game-grid {
+      flex: 1;
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(4, 1fr);
+      gap: 5px;
+      padding: 5px;
+    }
+
+    /* ── Cells ──────────────────────────────────────────── */
+    .cell {
+      background: #10101e;
+      border-radius: 10px;
+      cursor: pointer;
+      touch-action: manipulation;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.06s;
+    }
+    .cell:active { transform: scale(0.91); }
+
+    /* Target bubble */
+    .cell::after {
+      content: '';
+      position: absolute;
+      width: 62%;
+      height: 62%;
+      border-radius: 50%;
+      opacity: 0;
+      transform: scale(0);
+      pointer-events: none;
+    }
+    .cell[data-active]::after {
+      animation: targetPop 0.12s cubic-bezier(0.34, 1.4, 0.64, 1) forwards;
+    }
+    @keyframes targetPop {
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .cell[data-active="normal"]::after {
+      background: radial-gradient(circle at 35% 35%, #55eeff, #0077ff);
+      box-shadow: 0 0 16px rgba(0, 180, 255, 0.7);
+    }
+    .cell[data-active="bonus"] {
+      background: #14120a;
+    }
+    .cell[data-active="bonus"]::after {
+      background: radial-gradient(circle at 35% 35%, #ffe87a, #ff8800);
+      box-shadow: 0 0 22px rgba(255, 180, 0, 0.8);
+    }
+    .cell[data-active="skull"] {
+      background: #160a0a;
+    }
+    .cell[data-active="skull"]::after {
+      content: '💀';
+      font-size: clamp(1.4rem, 5vw, 2.2rem);
+      background: none;
+      box-shadow: none;
+      border-radius: 0;
+      animation: none;
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    /* Hit / miss feedback */
+    .cell.hit  { animation: hitFlash 0.32s ease-out; }
+    .cell.miss { animation: missShake 0.32s ease-out; }
+    @keyframes hitFlash {
+      0%   { background: rgba(0, 255, 136, 0.4); }
+      100% { background: #10101e; }
+    }
+    @keyframes missShake {
+      0%   { background: rgba(255, 60, 60, 0.35); transform: translateX(-5px); }
+      50%  { transform: translateX(5px); }
+      100% { background: #10101e; transform: translateX(0); }
+    }
+
+    /* Floating score popup */
+    .score-pop {
+      position: fixed;
+      font-size: 1.3rem;
+      font-weight: 900;
+      pointer-events: none;
+      z-index: 200;
+      animation: scoreFly 0.65s ease-out forwards;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+    }
+    @keyframes scoreFly {
+      from { opacity: 1; transform: translateY(0) scale(1.1); }
+      to   { opacity: 0; transform: translateY(-70px) scale(0.7); }
+    }
+
+    /* ── Done screen ────────────────────────────────────── */
+    .done-emoji { font-size: 3.5rem; }
+    .done-label {
+      font-size: 0.85rem;
+      color: #555;
+      text-transform: uppercase;
+      letter-spacing: 4px;
+    }
+    .done-score {
+      font-size: clamp(4rem, 18vw, 6rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, #ffd700, #ff8800);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+    }
+    .done-team {
+      font-size: 1rem;
+      color: #666;
+    }
+    .done-team strong { color: #ccc; }
+    .done-cta {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: #00ff88;
+      text-align: center;
+      max-width: 280px;
+      line-height: 1.5;
+    }
+
+    /* ── No-room overlay ─────────────────────────────────── */
+    #no-room-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: #08080f;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      padding: 32px;
+      text-align: center;
+      z-index: 999;
+    }
+    #no-room-overlay p { color: #555; font-size: 1.05rem; line-height: 1.6; }
+  </style>
+</head>
+<body>
+
+  <!-- No room fallback -->
+  <div id="no-room-overlay">
+    <div class="logo">TAP FRENZY</div>
+    <p>No room code found.<br>Scan the QR code at the station to join a game.</p>
+  </div>
+
+  <!-- JOIN -->
+  <div id="screen-join" class="screen active">
+    <div class="logo">TAP FRENZY</div>
+    <p class="subtitle">Tap targets before they vanish.<br>Score as high as you can in 30 seconds!</p>
+    <input type="text" id="team-name" placeholder="Enter team name" maxlength="24"
+      autocomplete="off" autocorrect="off" autocapitalize="words" spellcheck="false">
+    <p id="join-error" class="error-text"></p>
+    <button class="btn btn-primary" id="join-btn">Join Game</button>
+  </div>
+
+  <!-- WAITING -->
+  <div id="screen-waiting" class="screen">
+    <div class="pulse-ring"></div>
+    <p class="waiting-text">Waiting for host to start…</p>
+    <div class="team-badge" id="waiting-badge">Team Name</div>
+    <p style="color:#444; font-size:0.85rem; text-align:center;">Keep your screen on!</p>
+  </div>
+
+  <!-- COUNTDOWN -->
+  <div id="screen-countdown" class="screen">
+    <p class="countdown-label">Get ready!</p>
+    <div class="countdown-number" id="countdown-num">3</div>
+    <p class="countdown-label">Tap all the things</p>
+  </div>
+
+  <!-- GAME -->
+  <div id="screen-game" class="screen">
+    <div class="game-header">
+      <div class="timer-track">
+        <div id="timer-bar"></div>
+      </div>
+      <div id="time-left">30</div>
+      <div class="score-wrap">⭐&nbsp;<span id="score-val">0</span></div>
+    </div>
+    <div id="game-grid"></div>
+  </div>
+
+  <!-- DONE -->
+  <div id="screen-done" class="screen">
+    <div class="done-emoji">🎉</div>
+    <p class="done-label">Final Score</p>
+    <div class="done-score" id="final-score">0</div>
+    <p class="done-team">Team: <strong id="final-team"></strong></p>
+    <p class="done-cta">Look at the big screen for the leaderboard! 👀</p>
+  </div>
+
+  <!-- Firebase SDK (compat) -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+  <script>
+    // ============================================================
+    // FIREBASE CONFIG
+    // Replace the placeholder values with your Firebase project config.
+    // See README.md for step-by-step setup instructions.
+    // ============================================================
+    const FIREBASE_CONFIG = {
+      apiKey:            "REPLACE_WITH_YOUR_API_KEY",
+      authDomain:        "REPLACE_WITH_YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL:       "https://REPLACE_WITH_YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+      projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
+      storageBucket:     "REPLACE_WITH_YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
+      appId:             "REPLACE_WITH_YOUR_APP_ID"
+    };
+
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.database();
+
+    // ── URL params ───────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const roomId  = params.get('room');
+
+    if (!roomId) {
+      document.getElementById('no-room-overlay').style.display = 'flex';
+      document.getElementById('screen-join').classList.remove('active');
+    }
+
+    // ── Game state ───────────────────────────────────────────────
+    let teamKey   = null;
+    let teamName  = '';
+    let score     = 0;
+    let timeLeft  = 30;
+    let gameActive = false;
+    let gameTimerIv  = null;
+    let spawnTimeoutId = null;
+
+    // ── DOM refs ─────────────────────────────────────────────────
+    const teamNameInput  = document.getElementById('team-name');
+    const joinBtn        = document.getElementById('join-btn');
+    const joinError      = document.getElementById('join-error');
+    const waitingBadge   = document.getElementById('waiting-badge');
+    const countdownNum   = document.getElementById('countdown-num');
+    const scoreVal       = document.getElementById('score-val');
+    const timerBar       = document.getElementById('timer-bar');
+    const timeLeftEl     = document.getElementById('time-left');
+    const gameGrid       = document.getElementById('game-grid');
+    const finalScoreEl   = document.getElementById('final-score');
+    const finalTeamEl    = document.getElementById('final-team');
+
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+    function activeScreenId() {
+      const el = document.querySelector('.screen.active');
+      return el ? el.id : null;
+    }
+
+    // ── Join ─────────────────────────────────────────────────────
+    joinBtn.addEventListener('click', handleJoin);
+    teamNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleJoin(); });
+
+    async function handleJoin() {
+      const name = teamNameInput.value.trim();
+      if (!name) { joinError.textContent = 'Enter your team name first!'; return; }
+      if (!roomId) return;
+      joinError.textContent = '';
+      joinBtn.disabled = true;
+      joinBtn.textContent = 'Joining…';
+
+      try {
+        const roomSnap = await db.ref(`rooms/${roomId}`).once('value');
+        if (!roomSnap.exists()) {
+          showJoinError('Room not found. Scan the QR code again.');
+          return;
+        }
+        if (roomSnap.val().state !== 'lobby') {
+          showJoinError('Game already in progress — wait for the next round!');
+          return;
+        }
+        teamName = name;
+        const ref = db.ref(`rooms/${roomId}/teams`).push();
+        teamKey = ref.key;
+        await ref.set({ name, joinedAt: firebase.database.ServerValue.TIMESTAMP, score: null });
+
+        waitingBadge.textContent = name;
+        showScreen('screen-waiting');
+        listenToRoomState();
+      } catch (err) {
+        showJoinError('Connection error — check your internet and try again.');
+      }
+    }
+
+    function showJoinError(msg) {
+      joinError.textContent = msg;
+      joinBtn.disabled = false;
+      joinBtn.textContent = 'Join Game';
+    }
+
+    // ── Room state listener ──────────────────────────────────────
+    function listenToRoomState() {
+      db.ref(`rooms/${roomId}/state`).on('value', snap => {
+        const state = snap.val();
+        const screen = activeScreenId();
+        if (state === 'countdown' && screen === 'screen-waiting') {
+          runCountdown();
+        } else if (state === 'playing' && (screen === 'screen-countdown' || screen === 'screen-waiting')) {
+          startGame();
+        } else if (state === 'finished' && gameActive) {
+          endGame();
+        }
+      });
+    }
+
+    // ── Countdown ────────────────────────────────────────────────
+    function runCountdown() {
+      showScreen('screen-countdown');
+      let count = 3;
+      setCountdownNum(count);
+      playBeep(523);
+
+      const iv = setInterval(() => {
+        count--;
+        if (count > 0) {
+          setCountdownNum(count);
+          playBeep(count === 2 ? 659 : 784);
+        } else {
+          clearInterval(iv);
+        }
+      }, 1000);
+    }
+
+    function setCountdownNum(n) {
+      countdownNum.textContent = n;
+      countdownNum.style.animation = 'none';
+      countdownNum.offsetHeight; // force reflow
+      countdownNum.style.animation = '';
+    }
+
+    // ── Game ─────────────────────────────────────────────────────
+    function startGame() {
+      score     = 0;
+      timeLeft  = 30;
+      gameActive = true;
+      showScreen('screen-game');
+      buildGrid();
+      updateHUD();
+      playBeep(1047, 0.15);
+
+      gameTimerIv = setInterval(() => {
+        timeLeft--;
+        updateHUD();
+        if (timeLeft <= 0) endGame();
+      }, 1000);
+
+      scheduleNextSpawn();
+    }
+
+    function buildGrid() {
+      gameGrid.innerHTML = '';
+      for (let i = 0; i < 16; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        cell.dataset.idx = i;
+        cell.addEventListener('pointerdown', e => { e.preventDefault(); onTap(cell); });
+        gameGrid.appendChild(cell);
+      }
+    }
+
+    // ── Spawning ─────────────────────────────────────────────────
+    function scheduleNextSpawn() {
+      if (!gameActive) return;
+      const elapsed = 30 - timeLeft;
+      const delay   = Math.max(550, 1200 - elapsed * 22);
+      spawnTimeoutId = setTimeout(() => {
+        if (!gameActive) return;
+        spawnTargets();
+        scheduleNextSpawn();
+      }, delay);
+    }
+
+    function spawnTargets() {
+      const idle = Array.from(gameGrid.querySelectorAll('.cell:not([data-active])')).sort(() => Math.random() - 0.5);
+      const count = Math.random() < 0.28 ? 2 : 1;
+
+      for (let i = 0; i < Math.min(count, idle.length); i++) {
+        const cell    = idle[i];
+        const elapsed = 30 - timeLeft;
+        const rand    = Math.random();
+
+        let type;
+        if      (rand < 0.10 && timeLeft < 22) type = 'skull';
+        else if (rand < 0.25)                  type = 'bonus';
+        else                                   type = 'normal';
+
+        const visMs = Math.max(420, 980 - elapsed * 18);
+        activateCell(cell, type, visMs);
+      }
+    }
+
+    function activateCell(cell, type, visMs) {
+      cell.dataset.active = type;
+      setTimeout(() => {
+        if (cell.dataset.active === type) {
+          delete cell.dataset.active;
+        }
+      }, visMs);
+    }
+
+    // ── Tap handler ───────────────────────────────────────────────
+    function onTap(cell) {
+      if (!gameActive) return;
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+
+      if (cell.dataset.active) {
+        const type = cell.dataset.active;
+        const pts  = type === 'bonus' ? 25 : type === 'skull' ? -5 : 10;
+        delete cell.dataset.active;
+
+        score = Math.max(0, score + pts);
+        updateHUD();
+        flashCell(cell, pts > 0 ? 'hit' : 'miss');
+        showScorePop(cell, pts);
+        playBeep(pts > 0 ? (type === 'bonus' ? 1175 : 880) : 220);
+        if (navigator.vibrate) navigator.vibrate(pts > 0 ? 25 : [15, 8, 20]);
+      } else {
+        score = Math.max(0, score - 2);
+        updateHUD();
+        flashCell(cell, 'miss');
+        if (navigator.vibrate) navigator.vibrate(12);
+      }
+    }
+
+    function flashCell(cell, cls) {
+      cell.classList.add(cls);
+      setTimeout(() => cell.classList.remove(cls), 380);
+    }
+
+    function showScorePop(cell, pts) {
+      const rect = cell.getBoundingClientRect();
+      const el   = document.createElement('div');
+      el.className = 'score-pop';
+      el.textContent = pts > 0 ? `+${pts}` : `${pts}`;
+      el.style.color = pts >= 25 ? '#ffd700' : pts > 0 ? '#00ff88' : '#ff4444';
+      el.style.left  = (rect.left + rect.width / 2 - 18) + 'px';
+      el.style.top   = (rect.top  + rect.height / 2)     + 'px';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 700);
+    }
+
+    // ── HUD update ───────────────────────────────────────────────
+    function updateHUD() {
+      scoreVal.textContent = score;
+      timeLeftEl.textContent = timeLeft;
+      const pct = (timeLeft / 30) * 100;
+      timerBar.style.width = pct + '%';
+      timerBar.style.background = pct > 50 ? '#00ff88' : pct > 20 ? '#ffaa00' : '#ff4444';
+    }
+
+    // ── End game ─────────────────────────────────────────────────
+    async function endGame() {
+      if (!gameActive) return;
+      gameActive = false;
+      clearInterval(gameTimerIv);
+      clearTimeout(spawnTimeoutId);
+
+      // Clear all active targets
+      gameGrid.querySelectorAll('.cell').forEach(c => { delete c.dataset.active; c.className = 'cell'; });
+
+      playBeep(523, 0.25);
+
+      if (teamKey) {
+        try { await db.ref(`rooms/${roomId}/teams/${teamKey}/score`).set(score); }
+        catch (_) { /* silent — score still shows locally */ }
+      }
+
+      finalScoreEl.textContent = score;
+      finalTeamEl.textContent  = teamName;
+      showScreen('screen-done');
+    }
+
+    // ── Web Audio ─────────────────────────────────────────────────
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playBeep(freq, dur = 0.09) {
+      try {
+        const osc  = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.22, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+        osc.start();
+        osc.stop(audioCtx.currentTime + dur);
+      } catch (_) {}
+    }
+
+    // iOS requires AudioContext resume after user interaction
+    document.addEventListener('pointerdown', () => {
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }, { once: true });
+  </script>
+</body>
+</html>

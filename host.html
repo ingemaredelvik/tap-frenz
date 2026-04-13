@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tap Frenzy — Host</title>
+  <style>
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: #08080f;
+      color: #fff;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      overflow: hidden;
+    }
+
+    .screen {
+      display: none;
+      position: fixed; inset: 0;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 40px;
+      gap: 28px;
+    }
+    .screen.active { display: flex; }
+
+    /* ── Shared ──────────────────────────────────────────── */
+    .logo {
+      font-size: clamp(2.8rem, 5vw, 4.5rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, #00ff88 0%, #00ccff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: -2px;
+      line-height: 1;
+    }
+
+    .btn {
+      padding: 18px 52px;
+      border: none;
+      border-radius: 16px;
+      font-size: clamp(1.1rem, 2.5vw, 1.5rem);
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s, box-shadow 0.1s;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    .btn:active  { transform: scale(0.95); }
+    .btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+    .btn-start {
+      background: linear-gradient(135deg, #00ff88, #00ccff);
+      color: #08080f;
+      width: 100%;
+      box-shadow: 0 6px 30px rgba(0, 255, 136, 0.35);
+    }
+    .btn-new-game {
+      background: linear-gradient(135deg, #ffd700, #ff8800);
+      color: #08080f;
+      box-shadow: 0 6px 30px rgba(255, 180, 0, 0.35);
+    }
+
+    /* ── Lobby ───────────────────────────────────────────── */
+    #screen-lobby {
+      flex-direction: row;
+      align-items: stretch;
+      gap: 48px;
+      padding: 36px 48px;
+    }
+    .lobby-left {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+      min-width: 280px;
+      max-width: 320px;
+    }
+    #qrcode {
+      background: #fff;
+      padding: 14px;
+      border-radius: 16px;
+    }
+    #qrcode img, #qrcode canvas { display: block; }
+    .room-code-label {
+      font-size: 0.8rem;
+      color: #555;
+      letter-spacing: 4px;
+      text-transform: uppercase;
+    }
+    .room-code {
+      font-size: clamp(2.8rem, 5vw, 4rem);
+      font-weight: 900;
+      letter-spacing: 10px;
+      color: #ffd700;
+      text-shadow: 0 0 24px rgba(255, 210, 0, 0.4);
+    }
+    .lobby-url {
+      font-size: 0.75rem;
+      color: #444;
+      word-break: break-all;
+      text-align: center;
+      max-width: 260px;
+      line-height: 1.5;
+    }
+
+    .lobby-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      min-width: 0;
+    }
+    .teams-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .teams-heading {
+      font-size: 0.85rem;
+      color: #555;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+    #team-count {
+      font-size: 1rem;
+      font-weight: 700;
+      color: #00ff88;
+    }
+    #teams-list {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-wrap: wrap;
+      align-content: flex-start;
+      gap: 8px;
+      scrollbar-width: thin;
+      scrollbar-color: #222 transparent;
+    }
+    .team-pill {
+      background: #131320;
+      border: 1px solid #2a2a44;
+      border-radius: 30px;
+      padding: 10px 20px;
+      font-size: clamp(0.85rem, 1.5vw, 1.05rem);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      animation: pillIn 0.3s cubic-bezier(0.34, 1.4, 0.64, 1);
+      white-space: nowrap;
+    }
+    @keyframes pillIn {
+      from { transform: scale(0.5); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+    .team-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #00ff88;
+      box-shadow: 0 0 6px #00ff88;
+      flex-shrink: 0;
+    }
+
+    /* ── Countdown ───────────────────────────────────────── */
+    #screen-countdown { gap: 20px; }
+    .countdown-label {
+      font-size: clamp(1rem, 2.5vw, 1.4rem);
+      color: #555;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+    }
+    .host-count-num {
+      font-size: clamp(20vw, 32vw, 40vh);
+      font-weight: 900;
+      background: linear-gradient(135deg, #00ff88, #00ccff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      line-height: 1;
+      animation: bigPop 0.7s cubic-bezier(0.34, 1.4, 0.64, 1);
+    }
+    @keyframes bigPop {
+      from { transform: scale(0.1); opacity: 0; }
+      to   { transform: scale(1);   opacity: 1; }
+    }
+
+    /* ── Playing ─────────────────────────────────────────── */
+    #screen-playing { gap: 32px; }
+    .playing-label {
+      font-size: clamp(1rem, 2.5vw, 1.5rem);
+      color: #444;
+      letter-spacing: 5px;
+      text-transform: uppercase;
+    }
+    .host-big-timer {
+      font-size: clamp(20vw, 30vw, 40vh);
+      font-weight: 900;
+      color: #fff;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      transition: color 0.4s;
+    }
+    .host-big-timer.urgent {
+      color: #ff4444;
+      animation: timerPulse 0.45s ease-in-out infinite;
+    }
+    @keyframes timerPulse {
+      0%, 100% { transform: scale(1); }
+      50%       { transform: scale(1.04); }
+    }
+    .submitted-info {
+      font-size: clamp(0.9rem, 2vw, 1.1rem);
+      color: #3a3a5c;
+    }
+    .submitted-info strong { color: #00ff88; }
+
+    /* ── Leaderboard ─────────────────────────────────────── */
+    #screen-leaderboard { gap: 28px; justify-content: center; }
+    .lb-title {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 900;
+      background: linear-gradient(135deg, #ffd700, #ff8800);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 2px;
+    }
+    #leaderboard-list {
+      width: 100%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      max-height: 65vh;
+    }
+    .lb-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      background: #131320;
+      border: 1px solid #1e1e34;
+      border-radius: 14px;
+      padding: clamp(10px, 2vh, 16px) clamp(16px, 3vw, 28px);
+      opacity: 0;
+      transform: translateY(24px);
+      animation: lbSlide 0.45s cubic-bezier(0.34, 1.3, 0.64, 1) forwards;
+    }
+    @keyframes lbSlide {
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .lb-row.gold   { border-color: #ffd700; background: #15120a; }
+    .lb-row.silver { border-color: #b0b0b0; background: #121214; }
+    .lb-row.bronze { border-color: #cd7f32; background: #130e09; }
+    .lb-row.dnf    { opacity: 0.35 !important; }
+
+    .lb-rank {
+      font-size: clamp(1.4rem, 3vw, 2.2rem);
+      min-width: clamp(40px, 5vw, 58px);
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .lb-name {
+      flex: 1;
+      font-size: clamp(1rem, 2.5vw, 1.6rem);
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .lb-score {
+      font-size: clamp(1.2rem, 3vw, 2rem);
+      font-weight: 900;
+      color: #00ff88;
+      min-width: clamp(50px, 8vw, 80px);
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .lb-row.gold   .lb-score { color: #ffd700; }
+    .lb-row.silver .lb-score { color: #d0d0d0; }
+    .lb-row.bronze .lb-score { color: #cd7f32; }
+    .lb-row.dnf    .lb-score { color: #444; }
+  </style>
+</head>
+<body>
+
+  <!-- LOBBY -->
+  <div id="screen-lobby" class="screen active">
+    <div class="lobby-left">
+      <div class="logo">TAP FRENZY</div>
+      <div id="qrcode"></div>
+      <p class="room-code-label">Room Code</p>
+      <div class="room-code" id="room-code-display">----</div>
+      <p class="lobby-url" id="player-url-display"></p>
+    </div>
+    <div class="lobby-right">
+      <div class="teams-header">
+        <p class="teams-heading">Teams Joined</p>
+        <p id="team-count">0</p>
+      </div>
+      <div id="teams-list"></div>
+      <button class="btn btn-start" id="start-btn" disabled>▶ Start Game</button>
+    </div>
+  </div>
+
+  <!-- COUNTDOWN -->
+  <div id="screen-countdown" class="screen">
+    <p class="countdown-label">Get Ready!</p>
+    <div class="host-count-num" id="host-count-num">3</div>
+    <p class="countdown-label">Tap All The Things!</p>
+  </div>
+
+  <!-- PLAYING -->
+  <div id="screen-playing" class="screen">
+    <p class="playing-label">Time Remaining</p>
+    <div class="host-big-timer" id="host-big-timer">30</div>
+    <p class="submitted-info">
+      Scores in: <strong id="submitted-count">0</strong> / <strong id="total-count">0</strong>
+    </p>
+  </div>
+
+  <!-- LEADERBOARD -->
+  <div id="screen-leaderboard" class="screen">
+    <div class="lb-title">🏆 &nbsp;LEADERBOARD&nbsp; 🏆</div>
+    <div id="leaderboard-list"></div>
+    <button class="btn btn-new-game" id="new-game-btn">↺ &nbsp;New Game</button>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <!-- QR Code generator (no dependencies) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+  <script>
+    // ============================================================
+    // FIREBASE CONFIG
+    // Replace the placeholder values with your Firebase project config.
+    // See README.md for step-by-step setup instructions.
+    // ============================================================
+    const FIREBASE_CONFIG = {
+      apiKey:            "REPLACE_WITH_YOUR_API_KEY",
+      authDomain:        "REPLACE_WITH_YOUR_PROJECT_ID.firebaseapp.com",
+      databaseURL:       "https://REPLACE_WITH_YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+      projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
+      storageBucket:     "REPLACE_WITH_YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
+      appId:             "REPLACE_WITH_YOUR_APP_ID"
+    };
+
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.database();
+
+    // ── State ─────────────────────────────────────────────────────
+    let roomId    = null;
+    let roomRef   = null;
+    let hostTimerIv = null;
+    let hostTimeLeft = 30;
+    let teams     = {};   // key → { name, score }
+    let teamCount = 0;
+    let qrInstance = null;
+
+    // ── DOM refs ──────────────────────────────────────────────────
+    const roomCodeDisplay  = document.getElementById('room-code-display');
+    const playerUrlDisplay = document.getElementById('player-url-display');
+    const teamsList        = document.getElementById('teams-list');
+    const teamCountEl      = document.getElementById('team-count');
+    const startBtn         = document.getElementById('start-btn');
+    const hostCountNum     = document.getElementById('host-count-num');
+    const hostBigTimer     = document.getElementById('host-big-timer');
+    const submittedCountEl = document.getElementById('submitted-count');
+    const totalCountEl     = document.getElementById('total-count');
+    const leaderboardList  = document.getElementById('leaderboard-list');
+    const newGameBtn       = document.getElementById('new-game-btn');
+
+    function showScreen(id) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    // ── Room code generator (no ambiguous chars) ──────────────────
+    function generateCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      return Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    }
+
+    // ── HTML escape ───────────────────────────────────────────────
+    function esc(str) {
+      return String(str).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    // ── Create room ───────────────────────────────────────────────
+    async function createRoom() {
+      roomId  = generateCode();
+      roomRef = db.ref(`rooms/${roomId}`);
+      await roomRef.set({ state: 'lobby', createdAt: firebase.database.ServerValue.TIMESTAMP });
+
+      roomCodeDisplay.textContent = roomId;
+
+      const playerUrl = buildPlayerUrl(roomId);
+      playerUrlDisplay.textContent = playerUrl;
+
+      // QR code
+      document.getElementById('qrcode').innerHTML = '';
+      const size = Math.min(220, window.innerWidth * 0.22);
+      qrInstance = new QRCode(document.getElementById('qrcode'), {
+        text:          playerUrl,
+        width:         size,
+        height:        size,
+        colorDark:     '#000000',
+        colorLight:    '#ffffff',
+        correctLevel:  QRCode.CorrectLevel.M
+      });
+
+      // Listen for teams joining
+      db.ref(`rooms/${roomId}/teams`).on('child_added', snap => {
+        const key  = snap.key;
+        const data = snap.val();
+        teams[key] = { name: data.name, score: null };
+        teamCount++;
+        addTeamPill(data.name);
+        teamCountEl.textContent = teamCount;
+        totalCountEl.textContent = teamCount;
+        startBtn.disabled = false;
+
+        // Watch each team's score
+        db.ref(`rooms/${roomId}/teams/${key}/score`).on('value', s => {
+          if (teams[key]) {
+            teams[key].score = s.val();
+            refreshSubmittedCount();
+          }
+        });
+      });
+    }
+
+    function buildPlayerUrl(code) {
+      const base = window.location.href.replace('host.html', 'player.html').split('?')[0];
+      return `${base}?room=${code}`;
+    }
+
+    function addTeamPill(name) {
+      const div = document.createElement('div');
+      div.className = 'team-pill';
+      div.innerHTML = `<div class="team-dot"></div><span>${esc(name)}</span>`;
+      teamsList.appendChild(div);
+    }
+
+    function refreshSubmittedCount() {
+      const n = Object.values(teams).filter(t => t.score !== null).length;
+      submittedCountEl.textContent = n;
+    }
+
+    // ── Start game ────────────────────────────────────────────────
+    startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      totalCountEl.textContent = teamCount;
+      submittedCountEl.textContent = '0';
+      await roomRef.update({ state: 'countdown' });
+      runHostCountdown();
+    });
+
+    function runHostCountdown() {
+      showScreen('screen-countdown');
+      let count = 3;
+      setCountNum(count);
+      let iv = setInterval(async () => {
+        count--;
+        if (count > 0) {
+          setCountNum(count);
+        } else {
+          clearInterval(iv);
+          await roomRef.update({ state: 'playing', startedAt: firebase.database.ServerValue.TIMESTAMP });
+          startHostTimer();
+        }
+      }, 1000);
+    }
+
+    function setCountNum(n) {
+      hostCountNum.textContent = n;
+      hostCountNum.style.animation = 'none';
+      hostCountNum.offsetHeight; // force reflow
+      hostCountNum.style.animation = '';
+    }
+
+    function startHostTimer() {
+      hostTimeLeft = 30;
+      showScreen('screen-playing');
+      updateTimerDisplay();
+
+      hostTimerIv = setInterval(async () => {
+        hostTimeLeft--;
+        updateTimerDisplay();
+        if (hostTimeLeft <= 0) {
+          clearInterval(hostTimerIv);
+          await roomRef.update({ state: 'finished' });
+          // Give phones a moment to submit their scores, then show leaderboard
+          setTimeout(showLeaderboard, 2000);
+        }
+      }, 1000);
+    }
+
+    function updateTimerDisplay() {
+      hostBigTimer.textContent = hostTimeLeft;
+      if (hostTimeLeft <= 10) hostBigTimer.classList.add('urgent');
+      else                    hostBigTimer.classList.remove('urgent');
+    }
+
+    // ── Leaderboard ───────────────────────────────────────────────
+    function showLeaderboard() {
+      showScreen('screen-leaderboard');
+      leaderboardList.innerHTML = '';
+
+      const scored = Object.values(teams).filter(t => t.score !== null).sort((a, b) => b.score - a.score);
+      const dnf    = Object.values(teams).filter(t => t.score === null);
+
+      const medalClasses = ['gold', 'silver', 'bronze'];
+      const medals       = ['🥇', '🥈', '🥉'];
+
+      // Reveal from last place → first place for drama
+      const allScored = [...scored]; // copy, sorted best first
+      allScored.reverse().forEach((team, revIdx) => {
+        const rankIdx = allScored.length - 1 - revIdx; // 0-based rank
+        const row = document.createElement('div');
+        row.className = `lb-row${rankIdx < 3 ? ' ' + medalClasses[rankIdx] : ''}`;
+        // revIdx=0 is last place (appears first), revIdx=n-1 is winner (appears last)
+        row.style.animationDelay = `${revIdx * 0.28}s`;
+        const rankLabel = rankIdx < 3 ? medals[rankIdx] : `#${rankIdx + 1}`;
+        row.innerHTML = `
+          <div class="lb-rank">${rankLabel}</div>
+          <div class="lb-name">${esc(team.name)}</div>
+          <div class="lb-score">${team.score}</div>
+        `;
+        leaderboardList.prepend(row); // prepend so rank 1 ends up at top
+      });
+
+      // DNF teams at bottom
+      dnf.forEach((team, i) => {
+        const row = document.createElement('div');
+        row.className = 'lb-row dnf';
+        row.style.animationDelay = `${(scored.length + i) * 0.28}s`;
+        row.innerHTML = `
+          <div class="lb-rank" style="font-size:1.2rem">—</div>
+          <div class="lb-name">${esc(team.name)}</div>
+          <div class="lb-score">DNF</div>
+        `;
+        leaderboardList.appendChild(row);
+      });
+    }
+
+    // ── New Game ──────────────────────────────────────────────────
+    newGameBtn.addEventListener('click', async () => {
+      // Tear down old room
+      if (hostTimerIv) clearInterval(hostTimerIv);
+      if (roomRef) {
+        db.ref(`rooms/${roomId}/teams`).off();
+        await roomRef.remove();
+      }
+      // Reset state
+      teams     = {};
+      teamCount = 0;
+      teamsList.innerHTML = '';
+      teamCountEl.textContent = '0';
+      startBtn.disabled = true;
+      leaderboardList.innerHTML = '';
+
+      await createRoom();
+      showScreen('screen-lobby');
+    });
+
+    // ── Init ──────────────────────────────────────────────────────
+    createRoom();
+  </script>
+</body>
+</html>
