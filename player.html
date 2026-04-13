@@ -279,9 +279,10 @@
       transform: scale(1);
     }
 
-    /* Hit / miss feedback */
-    .cell.hit  { animation: hitFlash 0.32s ease-out; }
-    .cell.miss { animation: missShake 0.32s ease-out; }
+    /* Hit / miss / stolen feedback */
+    .cell.hit    { animation: hitFlash  0.32s ease-out; }
+    .cell.miss   { animation: missShake 0.32s ease-out; }
+    .cell.stolen { animation: stolenFade 0.4s ease-out; }
     @keyframes hitFlash {
       0%   { background: rgba(0, 255, 136, 0.4); }
       100% { background: #10101e; }
@@ -290,6 +291,10 @@
       0%   { background: rgba(255, 60, 60, 0.35); transform: translateX(-5px); }
       50%  { transform: translateX(5px); }
       100% { background: #10101e; transform: translateX(0); }
+    }
+    @keyframes stolenFade {
+      0%   { background: rgba(255, 100, 0, 0.5); }
+      100% { background: #10101e; }
     }
 
     /* Floating score popup */
@@ -446,8 +451,9 @@
     let score     = 0;
     let timeLeft  = 30;
     let gameActive = false;
-    let gameTimerIv    = null;
+    let gameTimerIv     = null;
     let spawnTimeoutIds = [];
+    let gameSequence    = []; // pre-generated event list (shared across all phones)
 
     // ── DOM refs ─────────────────────────────────────────────────
     const teamNameInput  = document.getElementById('team-name');
@@ -615,13 +621,14 @@
       playBeep(1047, 0.15);
 
       // Use startedAt as seed so every phone gets the same sequence
-      const seed     = startedAt ? (startedAt % 2147483647) : Date.now();
-      const sequence = generateSequence(seed);
+      const seed  = startedAt ? (startedAt % 2147483647) : Date.now();
+      gameSequence = generateSequence(seed);
 
       // Adjust for time already elapsed since game started (network/processing lag)
       const msElapsed = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
 
-      spawnTimeoutIds = sequence.map(event => {
+      // Schedule each spawn event; pass eventIdx so claims can remove the right cell
+      spawnTimeoutIds = gameSequence.map((event, eventIdx) => {
         const msFromNow = event.t - msElapsed;
         if (msFromNow < -event.visMs) return null; // already expired, skip
         return setTimeout(() => {
@@ -629,11 +636,14 @@
           event.cells.forEach((idx, i) => {
             const cell = gameGrid.children[idx];
             if (cell && !cell.dataset.active) {
-              activateCell(cell, event.types[i], event.visMs);
+              activateCell(cell, event.types[i], event.visMs, eventIdx);
             }
           });
         }, Math.max(0, msFromNow));
       }).filter(Boolean);
+
+      // Listen for claims written by ANY phone — remove claimed targets from this phone too
+      listenToClaims();
 
       // Drive the countdown timer from startedAt so all phones tick in sync
       function tick() {
@@ -641,7 +651,7 @@
         timeLeft = Math.max(0, 30 - Math.floor(elapsed));
         updateHUD();
         if (timeLeft <= 0) { endGame(); return; }
-        gameTimerIv = setTimeout(tick, 200); // poll frequently for accuracy
+        gameTimerIv = setTimeout(tick, 200);
       }
       tick();
     }
@@ -657,11 +667,13 @@
       }
     }
 
-    function activateCell(cell, type, visMs) {
-      cell.dataset.active = type;
+    function activateCell(cell, type, visMs, eventIdx) {
+      cell.dataset.active   = type;
+      cell.dataset.eventIdx = String(eventIdx);
       setTimeout(() => {
         if (cell.dataset.active === type) {
           delete cell.dataset.active;
+          delete cell.dataset.eventIdx;
         }
       }, visMs);
     }
@@ -672,17 +684,42 @@
       if (audioCtx.state === 'suspended') audioCtx.resume();
 
       if (cell.dataset.active) {
-        const type = cell.dataset.active;
-        const pts  = type === 'bonus' ? 25 : type === 'skull' ? -5 : 10;
-        delete cell.dataset.active;
+        const type     = cell.dataset.active;
+        const eventIdx = cell.dataset.eventIdx;
+        const pts      = type === 'bonus' ? 25 : type === 'skull' ? -5 : 10;
 
-        score = Math.max(0, score + pts);
-        updateHUD();
-        flashCell(cell, pts > 0 ? 'hit' : 'miss');
-        showScorePop(cell, pts);
-        playBeep(pts > 0 ? (type === 'bonus' ? 1175 : 880) : 220);
-        if (navigator.vibrate) navigator.vibrate(pts > 0 ? 25 : [15, 8, 20]);
+        // Remove immediately so double-taps are impossible
+        delete cell.dataset.active;
+        delete cell.dataset.eventIdx;
+
+        // Race to claim via Firebase transaction — only first writer wins
+        db.ref(`rooms/${roomId}/claims/${eventIdx}`).transaction(current => {
+          return current === null ? teamKey : undefined; // undefined = abort
+        }).then(result => {
+          if (result.committed) {
+            // We got it first!
+            score = Math.max(0, score + pts);
+            updateHUD();
+            flashCell(cell, pts > 0 ? 'hit' : 'miss');
+            showScorePop(cell, pts);
+            playBeep(pts > 0 ? (type === 'bonus' ? 1175 : 880) : 220);
+            if (navigator.vibrate) navigator.vibrate(pts > 0 ? 25 : [15, 8, 20]);
+          } else {
+            // Someone else was faster
+            flashCell(cell, 'stolen');
+            playBeep(300, 0.12);
+            showScorePop(cell, 0, '💨 stolen');
+          }
+        }).catch(() => {
+          // Firebase error — award points locally as fallback
+          score = Math.max(0, score + pts);
+          updateHUD();
+          flashCell(cell, pts > 0 ? 'hit' : 'miss');
+          showScorePop(cell, pts);
+        });
+
       } else {
+        // Tapped empty cell — local penalty only
         score = Math.max(0, score - 2);
         updateHUD();
         flashCell(cell, 'miss');
@@ -690,18 +727,46 @@
       }
     }
 
+    // ── Claims listener — removes targets claimed by other phones ─
+    function listenToClaims() {
+      db.ref(`rooms/${roomId}/claims`).on('child_added', snap => {
+        const eventIdx  = snap.key;
+        const claimedBy = snap.val();
+
+        // Only act on claims made by OTHER teams
+        if (claimedBy === teamKey) return;
+
+        // Remove the target from this phone if it's still visible
+        const event = gameSequence[parseInt(eventIdx)];
+        if (!event) return;
+        event.cells.forEach(cellIdx => {
+          const cell = gameGrid.children[cellIdx];
+          if (cell && cell.dataset.eventIdx === eventIdx) {
+            delete cell.dataset.active;
+            delete cell.dataset.eventIdx;
+            flashCell(cell, 'stolen'); // brief orange flash so you know it was taken
+          }
+        });
+      });
+    }
+
     function flashCell(cell, cls) {
       cell.classList.add(cls);
       setTimeout(() => cell.classList.remove(cls), 380);
     }
 
-    function showScorePop(cell, pts) {
+    function showScorePop(cell, pts, label) {
       const rect = cell.getBoundingClientRect();
       const el   = document.createElement('div');
       el.className = 'score-pop';
-      el.textContent = pts > 0 ? `+${pts}` : `${pts}`;
-      el.style.color = pts >= 25 ? '#ffd700' : pts > 0 ? '#00ff88' : '#ff4444';
-      el.style.left  = (rect.left + rect.width / 2 - 18) + 'px';
+      if (label) {
+        el.textContent = label;
+        el.style.color = '#ff8800';
+      } else {
+        el.textContent = pts > 0 ? `+${pts}` : `${pts}`;
+        el.style.color  = pts >= 25 ? '#ffd700' : pts > 0 ? '#00ff88' : '#ff4444';
+      }
+      el.style.left  = (rect.left + rect.width / 2 - 24) + 'px';
       el.style.top   = (rect.top  + rect.height / 2)     + 'px';
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 700);
@@ -723,6 +788,8 @@
       clearTimeout(gameTimerIv);
       spawnTimeoutIds.forEach(clearTimeout);
       spawnTimeoutIds = [];
+      // Stop listening to claims
+      db.ref(`rooms/${roomId}/claims`).off();
 
       // Clear all active targets
       gameGrid.querySelectorAll('.cell').forEach(c => { delete c.dataset.active; c.className = 'cell'; });
