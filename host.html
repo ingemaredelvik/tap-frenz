@@ -341,14 +341,14 @@
     // Replace the placeholder values with your Firebase project config.
     // See README.md for step-by-step setup instructions.
     // ============================================================
-    const FIREBASE_CONFIG = {
-      apiKey:            "REPLACE_WITH_YOUR_API_KEY",
-      authDomain:        "REPLACE_WITH_YOUR_PROJECT_ID.firebaseapp.com",
-      databaseURL:       "https://REPLACE_WITH_YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-      projectId:         "REPLACE_WITH_YOUR_PROJECT_ID",
-      storageBucket:     "REPLACE_WITH_YOUR_PROJECT_ID.appspot.com",
-      messagingSenderId: "REPLACE_WITH_YOUR_SENDER_ID",
-      appId:             "REPLACE_WITH_YOUR_APP_ID"
+    const firebaseConfig = {
+      apiKey: "AIzaSyBCo5xoA8ee8HC_TjngzGgUsAs872eUQ1I",
+      authDomain: "tap-frenzy-a7630.firebaseapp.com",
+      databaseURL: "https://tap-frenzy-a7630-default-rtdb.europe-west1.firebasedatabase.app",
+      projectId: "tap-frenzy-a7630",
+      storageBucket: "tap-frenzy-a7630.firebasestorage.app",
+      messagingSenderId: "941194814559",
+      appId: "1:941194814559:web:0f0ddec2e458ed23bc27ea"
     };
 
     firebase.initializeApp(FIREBASE_CONFIG);
@@ -394,46 +394,62 @@
 
     // ── Create room ───────────────────────────────────────────────
     async function createRoom() {
-      roomId  = generateCode();
-      roomRef = db.ref(`rooms/${roomId}`);
-      await roomRef.set({ state: 'lobby', createdAt: firebase.database.ServerValue.TIMESTAMP });
-
+      // 1. Generate room code and show QR immediately — no Firebase needed yet
+      roomId = generateCode();
       roomCodeDisplay.textContent = roomId;
 
       const playerUrl = buildPlayerUrl(roomId);
       playerUrlDisplay.textContent = playerUrl;
 
-      // QR code
+      // Generate QR code right away
       document.getElementById('qrcode').innerHTML = '';
-      const size = Math.min(220, window.innerWidth * 0.22);
-      qrInstance = new QRCode(document.getElementById('qrcode'), {
-        text:          playerUrl,
-        width:         size,
-        height:        size,
-        colorDark:     '#000000',
-        colorLight:    '#ffffff',
-        correctLevel:  QRCode.CorrectLevel.M
-      });
-
-      // Listen for teams joining
-      db.ref(`rooms/${roomId}/teams`).on('child_added', snap => {
-        const key  = snap.key;
-        const data = snap.val();
-        teams[key] = { name: data.name, score: null };
-        teamCount++;
-        addTeamPill(data.name);
-        teamCountEl.textContent = teamCount;
-        totalCountEl.textContent = teamCount;
-        startBtn.disabled = false;
-
-        // Watch each team's score
-        db.ref(`rooms/${roomId}/teams/${key}/score`).on('value', s => {
-          if (teams[key]) {
-            teams[key].score = s.val();
-            refreshSubmittedCount();
-          }
+      const size = Math.max(160, Math.min(220, window.innerWidth * 0.22));
+      try {
+        qrInstance = new QRCode(document.getElementById('qrcode'), {
+          text:         playerUrl,
+          width:        size,
+          height:       size,
+          colorDark:    '#000000',
+          colorLight:   '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
         });
-      });
+      } catch (e) {
+        document.getElementById('qrcode').innerHTML =
+          `<p style="color:#ff5566;font-size:0.8rem;padding:8px;">QR error:<br>${e.message}</p>`;
+      }
+
+      // 2. Connect to Firebase in the background
+      try {
+        roomRef = db.ref(`rooms/${roomId}`);
+        await roomRef.set({ state: 'lobby', createdAt: firebase.database.ServerValue.TIMESTAMP });
+
+        // Listen for teams joining
+        db.ref(`rooms/${roomId}/teams`).on('child_added', snap => {
+          const key  = snap.key;
+          const data = snap.val();
+          teams[key] = { name: data.name, score: null };
+          teamCount++;
+          addTeamPill(data.name);
+          teamCountEl.textContent = teamCount;
+          totalCountEl.textContent = teamCount;
+          startBtn.disabled = false;
+
+          // Watch each team's score
+          db.ref(`rooms/${roomId}/teams/${key}/score`).on('value', s => {
+            if (teams[key]) {
+              teams[key].score = s.val();
+              refreshSubmittedCount();
+            }
+          });
+        });
+      } catch (err) {
+        // Firebase not configured yet — show a warning but keep QR visible
+        const warning = document.createElement('p');
+        warning.style.cssText = 'color:#ffaa00;font-size:0.8rem;text-align:center;margin-top:8px;max-width:260px;line-height:1.4;';
+        warning.textContent = '⚠️ Firebase not connected. Paste your config into host.html & player.html (see README).';
+        document.querySelector('.lobby-left').appendChild(warning);
+        console.error('Firebase error:', err);
+      }
     }
 
     function buildPlayerUrl(code) {
