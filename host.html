@@ -341,7 +341,7 @@
     // Replace the placeholder values with your Firebase project config.
     // See README.md for step-by-step setup instructions.
     // ============================================================
-    const firebaseConfig = {
+    const FIREBASE_CONFIG = {
       apiKey: "AIzaSyBCo5xoA8ee8HC_TjngzGgUsAs872eUQ1I",
       authDomain: "tap-frenzy-a7630.firebaseapp.com",
       databaseURL: "https://tap-frenzy-a7630-default-rtdb.europe-west1.firebasedatabase.app",
@@ -351,8 +351,13 @@
       appId: "1:941194814559:web:0f0ddec2e458ed23bc27ea"
     };
 
-    firebase.initializeApp(FIREBASE_CONFIG);
-    const db = firebase.database();
+    let db = null;
+    try {
+      firebase.initializeApp(FIREBASE_CONFIG);
+      db = firebase.database();
+    } catch (e) {
+      console.error('Firebase init error:', e);
+    }
 
     // ── State ─────────────────────────────────────────────────────
     let roomId    = null;
